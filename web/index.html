@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>属性计算器</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+    <h1>属性计算器 <span class="version"></span></h1>
+
+    <!-- 工作目录行 -->
+    <div class="toolbar">
+        <button id="pickDirBtn">📁 选择工作目录</button>
+        <span id="dirLabel" class="dir-label">（未选择，将使用浏览器下载/文件选择）</span>
+    </div>
+
+    <!-- 功能行 -->
+    <div class="toolbar">
+        <button id="importBtn">导入配置</button>
+        <button id="exportBtn">导出配置</button>
+        <button id="saveDefaultBtn">保存为默认</button>
+        <button id="loadDefaultBtn">加载默认</button>
+        <button id="resetBtn">重置为初始</button>
+        <input type="file" id="fileInput" accept=".json,application/json" hidden>
+    </div>
+
+    <!-- 表头 -->
+    <div class="grid-header">
+        <div></div><div>角色顺序</div>
+        <div>体（万）</div><div>攻（万）</div><div>灵（万）</div><div>防（万）</div>
+        <div>皮肤1</div><div>皮肤2</div><div>皮肤3</div>
+    </div>
+
+    <!-- 行容器 -->
+    <div id="rowsContainer"></div>
+
+    <!-- 操作行 -->
+    <div class="bottom-toolbar">
+        <button id="calcBtn">计算</button>
+        <button id="clearBtn">清空结果</button>
+    </div>
+
+    <textarea id="resultArea" readonly placeholder="点击“计算”查看结果"></textarea>
+</div>
+
+<!-- 导入文件选择对话框 -->
+<div id="pickFileModal" class="modal" style="display:none">
+    <div class="modal-content">
+        <h3>选择配置文件</h3>
+        <select id="fileList" size="10" style="width:100%;min-height:220px"></select>
+        <div class="modal-actions">
+            <button id="pickFileOk">确定</button>
+            <button id="pickFileCancel">取消</button>
+        </div>
+    </div>
+</div>
+
+<!-- tooltip -->
+<div id="tooltip" class="tooltip" style="display:none"></div>
+
+<!-- 加载顺序：init → calc → fs → app -->
+<script src="init.js"></script>
+<script src="calc.js"></script>
+<script src="fs.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
