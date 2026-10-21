@@ -1072,7 +1072,12 @@ document.getElementById('resetBtn').addEventListener('click', () => {
                                 }
                             }
                         }
-                        if (!hasDiff && diff === 0) {
+                        // ★ 改为属性逐项对比，兼容"设基准后改过皮肤1"的场景
+                        const sameTeamAttr = !hasDiff
+                            && baselineEval.teamAttr.every((v, k) =>
+                                   Math.abs(v - bestRes.result.teamAttr[k]) < 1e-6)
+                            && Math.abs((baselineEval.speed || 0) - (bestRes.result.speed || 0)) < 1e-6;
+                        if (sameTeamAttr) {
                             logLines.push('');
                             logLines.push('  （与基准完全一致）');
                         }
