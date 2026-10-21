@@ -6,7 +6,7 @@ const Init = {
     qianYuan: new Map(),
     roleBaseRule: new Map(),
     maxPrint: true,
-    VERSION: "v1.10",
+    VERSION: "v1.20",
     DATA: "2026/10",
     ATTR_NAMES: ["体", "攻", "灵", "防", "速"],
 
