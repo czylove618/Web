@@ -617,6 +617,34 @@ document.getElementById('resetBtn').addEventListener('click', () => {
 });
 
 /* ============================================================
+ * OCR 填入接口（供 ocr.js 调用）
+ * ============================================================ */
+window.PkApp = {
+    getRowCount() { return rows.length; },
+    getRowRoleName(i) { return rows[i] ? rows[i].seq.value : ''; },
+    fillRowAttrs(i, values) {
+        const row = rows[i];
+        if (!row) return false;
+        for (let k = 0; k < 4; k++) {
+            const v = values[k];
+            if (v !== null && v !== undefined && v !== '') {
+                row.attrs[k].value = String(v);
+            }
+        }
+        return true;
+    }
+};
+
+/* 打开 OCR 模态框 */
+document.getElementById('ocrOpenBtn')?.addEventListener('click', () => {
+    if (typeof OCRUI === 'undefined') {
+        alert('OCR 模块未加载：请确认 index.html 已引入 ocr.js 与 tesseract.js');
+        return;
+    }
+    OCRUI.open();
+});
+
+/* ============================================================
  * 皮肤优化器 UI
  * ============================================================ */
 (function initOptimizerUI() {

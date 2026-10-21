@@ -23,6 +23,7 @@
         <button id="saveDefaultBtn">保存为默认</button>
         <button id="loadDefaultBtn">加载默认</button>
         <button id="resetBtn">重置为初始</button>
+        <button id="ocrOpenBtn">📷 识别属性</button>
         <input type="file" id="fileInput" accept=".json,application/json" hidden>
     </div>
 
@@ -139,6 +140,42 @@
     </div>
 </div>
 
+<!-- OCR 识别模态框 -->
+<div id="ocrModal" class="modal" style="display:none">
+    <div class="modal-content ocr-modal">
+        <h3>📷 截图识别属性数值</h3>
+
+        <div class="ocr-toolbar">
+            <button id="ocrPickBtn" class="opt-mini-btn">选择图片</button>
+            <input type="file" id="ocrFileInput" accept="image/*" hidden>
+            <span class="opt-hint">也可 Ctrl+V 粘贴、拖拽图片到此处</span>
+        </div>
+
+        <div id="ocrEmptyHint" class="ocr-empty-hint">请选择、粘贴或拖入图片</div>
+
+        <div id="ocrCanvasWrap" class="ocr-canvas-wrap" style="display:none">
+            <img id="ocrImg" alt="">
+            <canvas id="ocrOverlay"></canvas>
+        </div>
+
+        <div class="ocr-toolbar">
+            <span class="opt-hint" id="ocrStatus"></span>
+            <button id="ocrClearSelBtn"  class="opt-mini-btn" disabled>清除选区</button>
+            <button id="ocrRecognizeBtn" class="opt-mini-btn" disabled>识别选区</button>
+        </div>
+
+        <div id="ocrResults" class="ocr-results"></div>
+
+        <div class="modal-actions">
+            <label style="margin-right:auto;font-size:13px">
+                填入到：<select id="ocrTargetRow"></select>
+            </label>
+            <button id="ocrApplyBtn" disabled>填入表单</button>
+            <button id="ocrCloseBtn">关闭</button>
+        </div>
+    </div>
+</div>
+
 <!-- tooltip -->
 <div id="tooltip" class="tooltip" style="display:none"></div>
 
@@ -148,5 +185,7 @@
 <script src="fs.js"></script>
 <script src="optimize.js"></script>
 <script src="app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="ocr.js"></script>
 </body>
 </html>
