@@ -1,4 +1,4 @@
-/* 移植自 PkCal.java */
+/* 移植自 PkCal.java + evaluate() 精简接口 */
 const PkCal = {
     MAX_VALUE: (Math.pow(2, 31) - 1) * 5 / 10000,
 
@@ -48,6 +48,38 @@ const PkCal = {
             }
         }
         return this.outTxt.join('\r\n');
+    },
+
+    /* ★ 精简版：只返回统计数据，不构建字符串。供优化器调用 */
+    evaluate(seq, roleValueStrs, roleTransformStrs) {
+        this.reset();
+        let baseValues;
+        try {
+            baseValues = roleValueStrs.map(s => this.parseValue(s));
+        } catch (e) {
+            return { valid: false, reason: "属性解析失败" };
+        }
+        const seqParts = seq.split(/[,，]+/);
+        for (let i = 0; i < seqParts.length && i < 5; i++) {
+            const roleId = this.getNum(seqParts[i]);
+            const parts = (roleTransformStrs[i] || "").split(/[,，]+/).map(p => {
+                let v = p.trim();
+                if (v === "待替换") v = "空点化";
+                if (Init.skinIncludeMap.has(v)) v = Init.skinIncludeMap.get(v);
+                return v;
+            });
+            this.calRole(roleId, baseValues[i].slice(), ...parts);
+        }
+        if (!this.isComplete) return { valid: false, reason: "存在无效皮肤" };
+
+        const pool = [this.getSum(0), this.getSum(1), this.getSum(2), this.getSum(3)];
+        const teamAttr = [0, 0, 0, 0];
+        for (let i = 0; i < seqParts.length && i < 5; i++) {
+            const v = this.storageResult.get(this.getNum(seqParts[i]));
+            if (!v) continue;
+            for (let k = 0; k < 4; k++) teamAttr[k] += pool[k] + v[k];
+        }
+        return { valid: true, pool, teamAttr, speed: this.speed || 0 };
     },
 
     parseValue(s) {
@@ -113,10 +145,7 @@ const PkCal = {
             }
         }
         this.storageResult.set(roleId, persionValue.slice());
-
-        for (const con of cons) {
-            this.calindition(con, persionValue);
-        }
+        for (const con of cons) this.calindition(con, persionValue);
     },
 
     calindition(con, persionValue) {
@@ -200,9 +229,7 @@ const PkCal = {
         this.outTxt.push("附加攻：" + Math.round(this.getSum(1)));
         this.outTxt.push("附加灵：" + Math.round(this.getSum(2)));
         this.outTxt.push("附加防：" + Math.round(this.getSum(3)));
-        if (this.speed > 0.0) {
-            this.outTxt.push("附加速：" + Math.round(this.speed));
-        }
+        if (this.speed > 0.0) this.outTxt.push("附加速：" + Math.round(this.speed));
     },
 
     printFinalResult(seq) {
@@ -217,46 +244,33 @@ const PkCal = {
             );
         }
 
-        // 回血计算
         const presentRules = [];
         const presentValues = [];
         for (const rule of this.HEAL_RULES) {
             const vals = this.storageResult.get(rule[0]);
-            if (vals) {
-                presentRules.push(rule);
-                presentValues.push(vals);
-            }
+            if (vals) { presentRules.push(rule); presentValues.push(vals); }
         }
-        if (presentRules.length === 0) {
-            this.outTxt.push("");
-            return;
-        }
-        this.outTxt.push("-------------首回合血量参考（单位：万）-------------------------");
+        if (presentRules.length === 0) { this.outTxt.push(""); return; }
 
+        this.outTxt.push("-------------首回合血量参考（单位：万）-------------------------");
         let skillHealSumForBasic = 0;
         let hasLingHeal = false;
         let lingHealInfo = null;
 
         for (let i = 0; i < presentRules.length; i++) {
-            const rule = presentRules[i];
-            const vals = presentValues[i];
-            const roleId = rule[0];
-            const src = rule[1];
+            const rule = presentRules[i], vals = presentValues[i];
+            const roleId = rule[0], src = rule[1];
             const heal = (globle[src] + vals[src]) * rule[2];
             this.outTxt.push(
                 `${Init.roleMap.get(roleId)}基于${["体","攻","灵","防"][src]}回血${heal.toFixed(4)}`
             );
             if (rule[3] > 0) {
-                if (lingHealInfo === null) {
-                    lingHealInfo = [roleId, heal, rule[3]];
-                } else {
-                    hasLingHeal = true;
-                }
+                if (lingHealInfo === null) lingHealInfo = [roleId, heal, rule[3]];
+                else hasLingHeal = true;
             } else {
                 skillHealSumForBasic += heal;
             }
         }
-
         if (lingHealInfo && !hasLingHeal) {
             const [roleId, heal, basicRate] = lingHealInfo;
             const vals = this.storageResult.get(roleId);

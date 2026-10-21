@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>属性计算器</title>
-<link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>属性计算器</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
@@ -40,7 +40,78 @@
     <div class="bottom-toolbar">
         <button id="calcBtn">计算</button>
         <button id="clearBtn">清空结果</button>
+        <button id="readme">查看说明</button>
     </div>
+
+    <details id="optimizerPanel" class="optimizer">
+        <summary>🔍 皮肤优化器（遍历搜索更优配置）</summary>
+        <div class="optimizer-content">
+
+            <div class="opt-row">
+                <label>优化目标:</label>
+                <select id="optTarget">
+                    <option value="total">体/1.5 + 攻 + 灵*1.3（默认）</option>
+                    <option value="body">体总和</option>
+                    <option value="attack">攻总和</option>
+                    <option value="spirit">灵总和</option>
+                    <option value="weighted">加权（自定义）</option>
+                </select>
+                <div id="optWeights" class="opt-weights" style="display:none">
+                    <label>体<input id="wBody" type="number" value="0.1" step="0.1"></label>
+                    <label>攻<input id="wAttack" type="number" value="1" step="0.1"></label>
+                    <label>灵<input id="wSpirit" type="number" value="1" step="0.1"></label>
+                    <label>防<input id="wDefense" type="number" value="0" step="0.1"></label>
+                    <label>速<input id="wSpeed" type="number" value="0" step="0.1"></label>
+                </div>
+            </div>
+
+            <details class="opt-cand-section" open>
+                <summary><strong>候选皮肤池</strong>（皮肤2、皮肤3 从中选择；皮肤1 固定保留原值；允许同一互斥组皮肤多次入选）</summary>
+                <div class="opt-row opt-cand-toolbar">
+                    <input type="text" id="optCandSearch" placeholder="搜索皮肤名..." class="opt-cand-search">
+                    <button type="button" id="optCandSelectAll"   class="opt-mini-btn">全选当前</button>
+                    <button type="button" id="optCandClearAll"    class="opt-mini-btn">清空当前</button>
+                    <button type="button" id="optCandRoleOnly"    class="opt-mini-btn">默认勾选</button>
+<!--                    <button type="button" id="optCandSelectEmpty" class="opt-mini-btn">勾选空点化</button>-->
+                    <span id="optCandCount" class="opt-hint">已选 0 / 0</span>
+                </div>
+                <div id="optCandList" class="opt-cand-list"></div>
+            </details>
+
+            <!-- 对比基准 -->
+            <details id="optBaselinePanel" class="opt-cand-section" open>
+                <summary>
+                    <strong>📌 对比基准</strong>
+                    <span id="optBaselineStatus" class="opt-hint">（未设置）</span>
+                </summary>
+                <div class="opt-row" style="margin-top:8px">
+                    <button type="button" id="optBaselineSetBtn"   class="opt-mini-btn">以当前配置设为基准</button>
+                    <button type="button" id="optBaselineLoadBtn"  class="opt-mini-btn">从基准载入表单</button>
+                    <button type="button" id="optBaselineClearBtn" class="opt-mini-btn">清空基准</button>
+                </div>
+                <pre id="optBaselineSummary" class="opt-result" style="margin-top:6px"></pre>
+            </details>
+
+            <div class="opt-row">
+                <label>最大轮数:<input id="optMaxRounds" type="number" value="5" min="1" max="10"></label>
+                <label>随机重启:<input id="optRestarts" type="number" value="1" min="1" max="10"></label>
+                <label>总超时(秒):<input id="optTimeout" type="number" value="30" min="5" max="300"></label>
+            </div>
+
+            <div class="opt-row">
+                <button id="optStartBtn">开始优化</button>
+                <button id="optStopBtn" disabled>停止</button>
+                <button id="optApplyBtn" disabled>应用最优结果</button>
+            </div>
+
+            <div class="opt-row" id="optProgressRow" style="display:none">
+                <div class="progress-bar"><div class="progress-fill" id="optProgressFill"></div></div>
+                <span id="optProgressText" class="progress-text">准备中…</span>
+            </div>
+
+            <pre id="optResultInfo" class="opt-result"></pre>
+        </div>
+    </details>
 
     <textarea id="resultArea" readonly placeholder="点击“计算”查看结果"></textarea>
 </div>
@@ -57,6 +128,17 @@
     </div>
 </div>
 
+<!-- 说明文档 -->
+<div id="readmeModal" class="modal" style="display:none">
+    <div class="modal-content readme-modal">
+        <h3>更新说明</h3>
+        <pre id="readmeContent" class="readme-content">加载中…</pre>
+        <div class="modal-actions">
+            <button id="readmeClose">关闭</button>
+        </div>
+    </div>
+</div>
+
 <!-- tooltip -->
 <div id="tooltip" class="tooltip" style="display:none"></div>
 
@@ -64,6 +146,7 @@
 <script src="init.js"></script>
 <script src="calc.js"></script>
 <script src="fs.js"></script>
+<script src="optimize.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

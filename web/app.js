@@ -244,11 +244,6 @@ const rowsContainer = document.getElementById('rowsContainer');
 const resultArea = document.getElementById('resultArea');
 let rows = [];
 
-function guiGetNum(s) {
-    for (let i = 0; i < ROLE_NAMES.length; i++) if (ROLE_NAMES[i].includes(s)) return i;
-    return -1;
-}
-
 function buildRows(config) {
     rowsContainer.innerHTML = '';
     rows = [];
@@ -546,47 +541,18 @@ async function showDirFileList() {
 }
 
 document.getElementById('importBtn').addEventListener('click', () => {
-    console.log('[import] 点击。dirHandle=',
-        Workspace.dirHandle ? Workspace.dirHandle.name : '(null)',
-        '| supported=', Workspace.isSupported());
-
-    // 情况 A：没有工作目录 → 同步打开文件选择器（保证用户手势有效）
-    if (!Workspace.dirHandle) {
-        console.log('[import] 无工作目录，打开文件选择器');
-        fileInputEl.click();
-        return;
-    }
-
-    // 情况 B：有工作目录 → 先查询权限（不弹框）
+    if (!Workspace.dirHandle) { fileInputEl.click(); return; }
     Workspace.hasPermission().then(ok => {
-        console.log('[import] hasPermission=', ok);
-
-        if (ok) {
-            // B1：权限有效 → 直接列目录
-            showDirFileList();
-            return;
-        }
-
-        // B2：权限丢失 → 用 confirm 让用户明确选择，避免直接弹授权框卡住
+        if (ok) { showDirFileList(); return; }
         const useDir = confirm(
             `工作目录 "${Workspace.dirHandle.name}" 的访问权限已丢失。\n\n` +
             `【确定】重新授权该目录\n` +
             `【取消】改为选择本地文件`
         );
-        if (!useDir) {
-            console.log('[import] 用户选择本地文件');
-            fileInputEl.click();
-            return;
-        }
-
-        // 重新授权：必须放在 confirm 之后（用户刚刚的手势仍有效）
+        if (!useDir) { fileInputEl.click(); return; }
         Workspace.ensurePermission().then(granted => {
-            console.log('[import] ensurePermission=', granted);
-            if (granted) {
-                showDirFileList();
-            } else {
-                alert('目录授权失败，请重试或改为选择本地文件');
-            }
+            if (granted) showDirFileList();
+            else alert('目录授权失败，请重试或改为选择本地文件');
         });
     });
 });
@@ -607,7 +573,7 @@ document.getElementById('pickFileOk').addEventListener('click', async () => {
     }
 });
 
-document.getElementById('fileInput').addEventListener('change', e => {
+fileInputEl.addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
@@ -639,11 +605,8 @@ document.getElementById('saveDefaultBtn').addEventListener('click', async () => 
 document.getElementById('loadDefaultBtn').addEventListener('click', async () => {
     try {
         const config = await DefaultConfig.load({ interactive: true });
-        if (config) {
-            buildRows(config);
-        } else {
-            alert('没有已保存的默认配置，请先"保存为默认"或加载初始配置');
-        }
+        if (config) buildRows(config);
+        else alert('没有已保存的默认配置，请先"保存为默认"或加载初始配置');
     } catch (e) {
         alert('加载默认配置失败: ' + e.message);
     }
@@ -654,10 +617,611 @@ document.getElementById('resetBtn').addEventListener('click', () => {
 });
 
 /* ============================================================
+ * 皮肤优化器 UI
+ * ============================================================ */
+(function initOptimizerUI() {
+    const $ = id => document.getElementById(id);
+    if (!$('optimizerPanel')) {
+        console.warn('[optimizer] 缺少 #optimizerPanel，跳过');
+        return;
+    }
+
+    /* ====== 基准配置模块 ====== */
+    const BaselineConfig = {
+        KEY: 'pkcal_baseline_config',
+        _cache: null,
+
+        load() {
+            if (this._cache) return this._cache;
+            const s = localStorage.getItem(this.KEY);
+            if (!s) return null;
+            try {
+                this._cache = JSON.parse(s);
+                return this._cache;
+            } catch (_) {
+                return null;
+            }
+        },
+
+        save(sequence, skins) {
+            this._cache = {
+                sequence: sequence.slice(),
+                skins: skins.map(s => s.slice()),
+                savedAt: new Date().toISOString()
+            };
+            localStorage.setItem(this.KEY, JSON.stringify(this._cache));
+            return this._cache;
+        },
+
+        clear() {
+            this._cache = null;
+            localStorage.removeItem(this.KEY);
+        }
+    };
+
+    function updateBaselineUI() {
+        const b = BaselineConfig.load();
+        const statusEl = $('optBaselineStatus');
+        const summaryEl = $('optBaselineSummary');
+        if (!b) {
+            statusEl.textContent = '（未设置）';
+            statusEl.style.color = '#999';
+            summaryEl.textContent = '';
+            return;
+        }
+        const ts = b.savedAt ? new Date(b.savedAt).toLocaleString() : '';
+        statusEl.textContent = `（已设置 ${b.sequence.length} 个角色${ts ? ' · ' + ts : ''}）`;
+        statusEl.style.color = '#1890ff';
+
+        const lines = [];
+        for (let i = 0; i < b.sequence.length; i++) {
+            const skins = b.skins[i] || [];
+            lines.push(`${i + 1}. ${b.sequence[i]}: ${skins.map(s => `[${s || '空'}]`).join(' | ')}`);
+        }
+        summaryEl.textContent = lines.join('\n');
+    }
+
+    $('optTarget').addEventListener('change', e => {
+        $('optWeights').style.display = (e.target.value === 'weighted') ? 'flex' : 'none';
+    });
+
+    function buildObjective(target) {
+        switch (target) {
+            case 'total':    return r => r.teamAttr[0] / 1.5 + r.teamAttr[1] + r.teamAttr[2] * 1.3;
+            case 'body':     return r => r.teamAttr[0];
+            case 'attack':   return r => r.teamAttr[1];
+            case 'spirit':   return r => r.teamAttr[2];
+            case 'weighted': {
+                const w = [
+                    parseFloat($('wBody').value)    || 0,
+                    parseFloat($('wAttack').value)  || 0,
+                    parseFloat($('wSpirit').value)  || 0,
+                    parseFloat($('wDefense').value) || 0,
+                    parseFloat($('wSpeed').value)   || 0
+                ];
+                return r => r.teamAttr[0]*w[0] + r.teamAttr[1]*w[1] +
+                            r.teamAttr[2]*w[2] + r.teamAttr[3]*w[3] +
+                            (r.speed || 0) * w[4];
+            }
+            default: return r => 0;
+        }
+    }
+
+    /* ====== 候选池 ====== */
+    const CANDIDATE_EXCLUDE = new Set(["待替换"]);
+    const ALL_CANDIDATE_SKINS = SKIN_NAMES.filter(s => !CANDIDATE_EXCLUDE.has(s));
+    const selectedSet = new Set();
+
+    /* ====== 默认皮肤列表（显式维护，按需增删） ====== */
+    const DEFAULT_SKIN_NAMES = [
+        "玄星归尘紫英","洞玄夏侯夫人","洞玄蚩尤云凡","洞玄归尘紫英",
+        "洞玄射日天河","升龙厉江流","化神仙霞欺霜","洞玄断剑菖兰","洞玄梦蛇忆如","升龙掌门长卿","玄星魔翳",
+        "玄星仙霞欺霜","洞玄魔剑龙葵","化神射日天河","洞玄幻瞑梦璃","升龙断剑菖兰","玄星姜世离",
+        "玄星梦蛇忆如","化神魔化玄霄","升龙梦蛇小蛮","飞天夏侯夫人",
+
+        "乾元归尘紫英","乾元灵灯明绣","乾元望舒菱纱","乾元梦蛇忆如",
+        "乾元断剑菖兰","乾元射日天河","乾元左冠人","乾元飞龙景天","乾元夏侯家主",
+        "乾元幻瞑梦璃",
+        "乾元树灵雪见","乾元魔化玄霄"
+        // ↓ 继续按需添加
+    ];
+
+    /* 列表合法性校验：写错皮肤会打印警告 */
+    (function validateDefaultList() {
+        const validSet = new Set(ALL_CANDIDATE_SKINS);
+        const invalid = DEFAULT_SKIN_NAMES.filter(s => !validSet.has(s));
+        if (invalid.length) {
+            console.warn('[optimizer] 默认皮肤列表中存在无效项:', invalid);
+        }
+        const dup = DEFAULT_SKIN_NAMES.filter((s, i) => DEFAULT_SKIN_NAMES.indexOf(s) !== i);
+        if (dup.length) {
+            console.warn('[optimizer] 默认皮肤列表存在重复:', dup);
+        }
+    })();
+
+    const ROLE_NAMES_CLEAN = ROLE_NAMES.filter(n => n !== '空');
+    // 默认勾选判定
+    function isDefaultSkin(skin) {
+        return DEFAULT_SKIN_NAMES.includes(skin);
+    }
+    ALL_CANDIDATE_SKINS.forEach(s => { if (isDefaultSkin(s)) selectedSet.add(s); });
+
+    const candListEl = $('optCandList');
+    const candSearchEl = $('optCandSearch');
+    const candCountEl = $('optCandCount');
+
+    function renderCandidateList() {
+        const filter = candSearchEl.value.trim().toLowerCase();
+        const filterMatchesEmpty = !filter || '空点化'.includes(filter);
+
+        const visible = ALL_CANDIDATE_SKINS.filter(s =>
+            s !== '空点化' && (!filter || s.toLowerCase().includes(filter))
+        );
+        const list = filterMatchesEmpty ? ['空点化', ...visible] : visible;
+
+        const frag = document.createDocumentFragment();
+        list.forEach(skin => {
+            const lbl = document.createElement('label');
+            lbl.className = 'opt-cand-item';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.value = skin;
+            cb.checked = selectedSet.has(skin);
+            cb.addEventListener('change', () => {
+                if (cb.checked) selectedSet.add(skin);
+                else selectedSet.delete(skin);
+                updateCandidateCount();
+            });
+            const span = document.createElement('span');
+            span.textContent = skin;
+            lbl.appendChild(cb);
+            lbl.appendChild(span);
+            frag.appendChild(lbl);
+        });
+        candListEl.innerHTML = '';
+        candListEl.appendChild(frag);
+        updateCandidateCount();
+    }
+
+    function updateCandidateCount() {
+        candCountEl.textContent = `已选 ${selectedSet.size} / ${ALL_CANDIDATE_SKINS.length}`;
+    }
+
+    candSearchEl.addEventListener('input', renderCandidateList);
+
+    $('optCandSelectAll').addEventListener('click', () => {
+        const filter = candSearchEl.value.trim().toLowerCase();
+        if (!filter || '空点化'.includes(filter)) selectedSet.add('空点化');
+        ALL_CANDIDATE_SKINS.forEach(s => {
+            if (s !== '空点化' && (!filter || s.toLowerCase().includes(filter))) {
+                selectedSet.add(s);
+            }
+        });
+        renderCandidateList();
+    });
+
+    $('optCandClearAll').addEventListener('click', () => {
+        const filter = candSearchEl.value.trim().toLowerCase();
+        if (!filter) {
+            selectedSet.clear();
+        } else {
+            if ('空点化'.includes(filter)) selectedSet.delete('空点化');
+            ALL_CANDIDATE_SKINS.forEach(s => {
+                if (s !== '空点化' && s.toLowerCase().includes(filter)) selectedSet.delete(s);
+            });
+        }
+        renderCandidateList();
+    });
+
+    $('optCandRoleOnly').addEventListener('click', () => {
+        selectedSet.clear();
+        ALL_CANDIDATE_SKINS.forEach(s => { if (isDefaultSkin(s)) selectedSet.add(s); });
+        renderCandidateList();
+    });
+
+    renderCandidateList();
+
+    /* ====== 基准按钮绑定 ====== */
+    $('optBaselineSetBtn').addEventListener('click', () => {
+        const data = collectFormData();
+        const config = toConfig(data);
+        BaselineConfig.save(config.sequence, config.roles.map(r => r.skins));
+        updateBaselineUI();
+    });
+
+    $('optBaselineLoadBtn').addEventListener('click', () => {
+        const b = BaselineConfig.load();
+        if (!b) { alert('尚未设置基准'); return; }
+        for (let i = 0; i < rows.length; i++) {
+            if (b.sequence[i] && ROLE_NAMES.includes(b.sequence[i])) {
+                rows[i].seq.value = b.sequence[i];
+            }
+            if (b.skins[i]) {
+                for (let k = 0; k < 3; k++) {
+                    rows[i].skins[k].setValue(b.skins[i][k] || '');
+                }
+            }
+        }
+    });
+
+    $('optBaselineClearBtn').addEventListener('click', () => {
+        if (!confirm('确定清空基准吗？')) return;
+        BaselineConfig.clear();
+        updateBaselineUI();
+    });
+
+    updateBaselineUI();
+
+    /* ====== 工具 ====== */
+    function fmtTeam(ta) {
+        return `体${ta[0].toFixed(0)} 攻${ta[1].toFixed(0)} 灵${ta[2].toFixed(0)} 防${ta[3].toFixed(0)}`;
+    }
+
+    function randomStartSkins(currentSkins, candidates) {
+        return currentSkins.map(arr => {
+            const copy = arr.slice();
+            copy[1] = candidates[Math.floor(Math.random() * candidates.length)];
+            copy[2] = candidates[Math.floor(Math.random() * candidates.length)];
+            return copy;
+        });
+    }
+
+    let pendingResult = null;
+
+    /* ====== 开始优化 ====== */
+    $('optStartBtn').addEventListener('click', async () => {
+        const candidates = Array.from(selectedSet);
+        if (candidates.length === 0) {
+            alert('请至少勾选一个候选皮肤');
+            return;
+        }
+
+        const data = collectFormData();
+        const seqParts = data.seq.split('，');
+        const roleValues = data.roleValues;
+        const currentSkins = data.roles.map(r =>
+            r.skins.map(s => s === "待替换" ? "空点化" : s)
+        );
+
+        const objectiveFn = buildObjective($('optTarget').value);
+        const maxRounds = parseInt($('optMaxRounds').value) || 5;
+        const restartCount = parseInt($('optRestarts').value) || 1;
+        const totalTimeoutMs = (parseInt($('optTimeout').value) || 30) * 1000;
+        const seqStr = seqParts.join('，');
+
+        const startBtn = $('optStartBtn'), stopBtn = $('optStopBtn'), applyBtn = $('optApplyBtn');
+        const progressRow = $('optProgressRow'), progressFill = $('optProgressFill');
+        const progressText = $('optProgressText'), resultInfo = $('optResultInfo');
+
+        startBtn.disabled = true;
+        applyBtn.disabled = true;
+        stopBtn.disabled = false;
+        progressRow.style.display = 'flex';
+        progressFill.style.width = '0%';
+        progressText.textContent = '初始化…';
+        resultInfo.textContent = '';
+        pendingResult = null;
+
+        const logLines = [];
+        logLines.push(`【候选池】共 ${candidates.length} 个皮肤`);
+        logLines.push('');
+        logLines.push('【改进日志】（皮肤1 固定，仅优化皮肤2/3）');
+        resultInfo.textContent = logLines.join('\n');
+
+        const globalStart = Date.now();
+        let bestRes = null;
+        let completedRestarts = 0;
+
+        try {
+            for (let restart = 0; restart < restartCount; restart++) {
+                const usedMs = Date.now() - globalStart;
+                if (usedMs >= totalTimeoutMs) {
+                    logLines.push(`[!] 总超时 ${(totalTimeoutMs / 1000).toFixed(1)}s 已到，提前停止重启`);
+                    resultInfo.textContent = logLines.join('\n');
+                    break;
+                }
+                if (optimizer.cancelled) break;
+
+                const startSkins = (restart === 0)
+                    ? currentSkins
+                    : randomStartSkins(currentSkins, candidates);
+                const remainingMs = totalTimeoutMs - usedMs;
+
+                logLines.push('');
+                logLines.push(`━━━ 重启 ${restart + 1} / ${restartCount} ━━━`);
+                resultInfo.textContent = logLines.join('\n');
+
+                const res = await optimizer.run({
+                    seqParts, roleValues, currentSkins: startSkins,
+                    candidates, objectiveFn,
+                    maxRounds, timeoutMs: remainingMs,
+                    onProgress: p => {
+                        if (p.pendingImprovement) {
+                            const imp = p.pendingImprovement;
+                            logLines.push(
+                                `  [改进] ${imp.roleName} 皮肤${imp.slotIndex + 1}: ` +
+                                `${imp.from} → ${imp.to}  (评分 ${p.bestScore.toFixed(0)})`
+                            );
+                            resultInfo.textContent = logLines.join('\n');
+                            resultInfo.scrollTop = resultInfo.scrollHeight;
+                        }
+                        if (p.totalSteps) {
+                            const pct = Math.min(99, (p.step / p.totalSteps) * 100);
+                            progressFill.style.width = pct.toFixed(1) + '%';
+                        }
+                        progressText.textContent =
+                            `重启 ${restart + 1}/${restartCount} | 步 ${p.step} | ` +
+                            `评分 ${p.bestScore.toFixed(0)} | ${fmtTeam(p.bestResult.teamAttr)}`;
+                    }
+                });
+
+                if (!res.ok) {
+                    logLines.push(`  [X] 重启 ${restart + 1} 失败: ${res.reason}`);
+                    resultInfo.textContent = logLines.join('\n');
+                    continue;
+                }
+
+                completedRestarts++;
+                logLines.push(
+                    `  重启 ${restart + 1} 完成: 评分 ${res.score.toFixed(0)} | ` +
+                    `耗时 ${(res.elapsed / 1000).toFixed(1)}s` +
+                    (res.timedOut ? ' (超时)' : '') +
+                    (res.cancelled ? ' (停止)' : '')
+                );
+                resultInfo.textContent = logLines.join('\n');
+
+                if (!bestRes || res.score > bestRes.score) bestRes = res;
+                if (optimizer.cancelled) break;
+            }
+
+            if (!bestRes) {
+                alert('优化未产生有效结果');
+                return;
+            }
+
+            progressFill.style.width = '100%';
+            const totalElapsed = (Date.now() - globalStart) / 1000;
+            progressText.textContent =
+                `完成 ${completedRestarts}/${restartCount} 次重启 | ` +
+                `总耗时 ${totalElapsed.toFixed(1)}s | 评分 ${bestRes.score.toFixed(0)}`;
+
+            const baseRes = PkCal.evaluate(
+                seqStr, roleValues, currentSkins.map(s => s.join(','))
+            );
+            const baseScore = baseRes.valid ? objectiveFn(baseRes) : 0;
+
+            logLines.push('');
+            logLines.push('====== 最终结果 ======');
+            logLines.push(fmtTeam(bestRes.result.teamAttr));
+            if (bestRes.result.speed > 0) logLines.push(`速度: ${bestRes.result.speed.toFixed(0)}`);
+            logLines.push('');
+            logLines.push(`起点评分: ${baseScore.toFixed(0)}`);
+            logLines.push(`最优评分: ${bestRes.score.toFixed(0)}`);
+            if (baseScore > 0) {
+                const pct = (bestRes.score - baseScore) / baseScore * 100;
+                if (pct > 0) logLines.push(`提升: +${pct.toFixed(2)}%`);
+                else if (pct === 0) logLines.push(`提升: 0.00%（无变化）`);
+            } else {
+                logLines.push(`提升: 起点评分为 0，无法计算百分比`);
+            }
+            logLines.push('');
+            logLines.push('【最终配置】（皮肤1 保持原值）');
+            for (let i = 0; i < seqParts.length; i++) {
+                const s = bestRes.config[i];
+                logLines.push(
+                    `  ${seqParts[i]}:\n` +
+                    `    皮肤1=[固定]${s[0]}\n` +
+                    `    皮肤2=${s[1]}\n` +
+                    `    皮肤3=${s[2]}`
+                );
+            }
+
+            // ===================== 与基准对比 =====================
+            const baseline = BaselineConfig.load();
+            if (baseline) {
+                logLines.push('');
+                logLines.push('====== 与基准对比 ======');
+
+                const sameOrder = baseline.sequence.length === seqParts.length
+                    && baseline.sequence.every((name, i) => name === seqParts[i]);
+
+                if (!sameOrder) {
+                    logLines.push('⚠ 基准角色顺序与当前表单不同，无法逐角色对比');
+                    logLines.push('  基准角色: ' + baseline.sequence.join('，'));
+                    logLines.push('  当前角色: ' + seqParts.join('，'));
+                    logLines.push('  建议：点击"从基准载入表单"后再优化，或重新设置基准');
+                } else {
+                    const baselineTrans = baseline.skins.map(s => s.join(','));
+                    const baselineEval = PkCal.evaluate(seqStr, roleValues, baselineTrans);
+                    if (!baselineEval.valid) {
+                        logLines.push('⚠ 基准配置评估失败: ' + (baselineEval.reason || '未知'));
+                    } else {
+                        const baselineScore = objectiveFn(baselineEval);
+                        logLines.push(`基准评分: ${baselineScore.toFixed(1)}`);
+                        logLines.push(`最优评分: ${bestRes.score.toFixed(1)}`);
+                        if (baselineScore > 0) {
+                            const pct = (bestRes.score - baselineScore) / baselineScore * 100;
+                            const sign = pct > 0 ? '+' : '';
+                            logLines.push(`差异: ${sign}${pct.toFixed(2)}%`);
+                        } else {
+                            logLines.push(`差异: 基准评分为 0，无法计算百分比`);
+                        }
+
+                        logLines.push('');
+                        logLines.push('【角色差异】（仅对比皮肤2/3，皮肤1 固定）');
+                        let hasDiff = false;
+                        for (let i = 0; i < seqParts.length; i++) {
+                            const baseSkins = baseline.skins[i] || [];
+                            const optSkins = bestRes.config[i];
+                            const roleName = seqParts[i];
+                            const slotDiffs = [];
+                            for (let k = 1; k <= 2; k++) {
+                                const b = baseSkins[k] || '';
+                                const o = optSkins[k] || '';
+                                if (b !== o) {
+                                    slotDiffs.push({ slot: k + 1, from: b || '空', to: o || '空' });
+                                }
+                            }
+                            if (slotDiffs.length === 0) {
+                                logLines.push(`  位置${i + 1} ${roleName}: （无变化）`);
+                            } else {
+                                hasDiff = true;
+                                logLines.push(`  位置${i + 1} ${roleName}:`);
+                                for (const d of slotDiffs) {
+                                    logLines.push(`    皮肤${d.slot}: ${d.from} → ${d.to}`);
+                                }
+                            }
+                        }
+                        if (!hasDiff && diff === 0) {
+                            logLines.push('');
+                            logLines.push('  （与基准完全一致）');
+                        }
+                    }
+                }
+            }
+
+            resultInfo.textContent = logLines.join('\n');
+            resultInfo.scrollTop = resultInfo.scrollHeight;
+
+            pendingResult = bestRes.config;
+            applyBtn.disabled = false;
+        } catch (e) {
+            console.error(e);
+            alert('优化异常: ' + e.message);
+        } finally {
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+        }
+    });
+
+    $('optStopBtn').addEventListener('click', () => {
+        optimizer.stop();
+        $('optStopBtn').disabled = true;
+    });
+
+    $('optApplyBtn').addEventListener('click', () => {
+        if (!pendingResult) return;
+        for (let i = 0; i < rows.length && i < pendingResult.length; i++) {
+            const skins = pendingResult[i];
+            for (let k = 1; k <= 2; k++) {
+                rows[i].skins[k].setValue(skins[k] || '');
+            }
+        }
+        $('optApplyBtn').disabled = true;
+        pendingResult = null;
+
+        try {
+            const { seq, roleValues, roleTransforms } = collectFormData();
+            resultArea.value = PkCal.calculate(seq, roleValues, roleTransforms);
+        } catch (_) {}
+    });
+})();
+
+/* ============================================================
+ * 说明文档
+ * 加载顺序：
+ *   1. 工作目录下的 README.txt（需授权）
+ *   2. 同目录 fetch('README.txt')（需 http/https）
+ *   3. 内置兜底说明
+ * ============================================================ */
+(function initReadme() {
+    const $ = id => document.getElementById(id);
+    const modal = $('readmeModal');
+    const contentEl = $('readmeContent');
+    const readmeBtn = $('readme');
+    if (!modal || !contentEl || !readmeBtn) {
+        console.warn('[readme] 缺少说明 modal 或按钮，跳过');
+        return;
+    }
+
+    const FILE_NAME = 'README.txt';
+
+    const BUILTIN_README = [
+        '属性计算器 使用说明（内置简版）',
+        '================================',
+        '',
+        '【为什么显示这段文字】',
+        '未找到外部说明文件 README.txt。',
+        '',
+        '【如何添加完整说明】',
+        '1. 在 index.html 同目录下创建 README.txt',
+        '2. 或先点击"选择工作目录"授权一个文件夹，',
+        '   并在该文件夹放 README.txt',
+        '',
+        '【基本用法】',
+        '- 填写 5 个角色的基础属性和皮肤',
+        '- 拖动 ⠿ 手柄可交换角色顺序',
+        '- 点击"计算"查看结果',
+        '- 皮肤输入框右键可查看转换规则',
+        '',
+        '【皮肤优化器】',
+        '- 展开"皮肤优化器"面板',
+        '- 勾选候选皮肤池后点击"开始优化"',
+        '- 皮肤1 固定不参与优化'
+    ].join('\n');
+
+    let cachedText = null;
+
+    async function loadReadme() {
+        // 1. 工作目录
+        if (Workspace.dirHandle) {
+            try {
+                const ok = await Workspace.hasPermission();
+                if (ok) {
+                    return await Workspace.readFile(FILE_NAME);
+                }
+            } catch (_) {}
+        }
+        // 2. fetch 同目录
+        try {
+            const res = await fetch(FILE_NAME, { cache: 'no-cache' });
+            if (res.ok) {
+                return await res.text();
+            }
+        } catch (_) {}
+        // 3. 兜底
+        return BUILTIN_README;
+    }
+
+    async function openReadme() {
+        modal.style.display = 'flex';
+        contentEl.textContent = '加载中…';
+        try {
+            const text = cachedText !== null ? cachedText : await loadReadme();
+            cachedText = text;
+            contentEl.textContent = text;
+            contentEl.scrollTop = 0;
+        } catch (e) {
+            contentEl.textContent = '加载失败: ' + e.message + '\n\n' + BUILTIN_README;
+        }
+    }
+
+    function closeReadme() {
+        modal.style.display = 'none';
+    }
+
+    readmeBtn.addEventListener('click', openReadme);
+    $('readmeClose').addEventListener('click', closeReadme);
+
+    // 点击遮罩关闭
+    modal.addEventListener('click', e => {
+        if (e.target === modal) closeReadme();
+    });
+
+    // Esc 关闭
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && modal.style.display !== 'none') {
+            closeReadme();
+        }
+    });
+})();
+
+/* ============================================================
  * 启动
  * ============================================================ */
 (async function boot() {
-    document.querySelector('h1 .version').textContent = `[${Init.DATA} / ${Init.VERSION}]`;
+    const versionEl = document.querySelector('h1 .version');
+    if (versionEl) versionEl.textContent = `[${Init.DATA} / ${Init.VERSION}]`;
 
     await initWorkspace();
 
