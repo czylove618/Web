@@ -338,3 +338,35 @@ button:disabled { opacity: .5; cursor: not-allowed; }
     border-radius: 3px;
     font-size: 13px;
 }
+/* 工具栏链接（与 button 视觉一致） */
+.tool-link {
+    display: inline-block;
+    padding: 6px 14px;
+    border: 1px solid #1890ff;
+    background: #1890ff;
+    color: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    text-decoration: none;
+    transition: all .15s;
+    line-height: normal;
+    box-sizing: border-box;
+    vertical-align: middle;
+}
+.tool-link:hover,
+.tool-link:visited:hover {
+    background: #40a9ff;
+    border-color: #40a9ff;
+    color: #fff;
+    text-decoration: none;
+}
+.tool-link:visited {
+    color: #fff;   /* 防止访问过的链接变紫 */
+}
+.tool-link:active {
+    background: #096dd9;
+    border-color: #096dd9;
+    color: #fff;
+}
